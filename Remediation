@@ -1,0 +1,82 @@
+# Remediation — DNS Incident Analysis
+
+## Immediate Resolution Steps
+
+### Step 1 — Check and Restart the DNS Service
+SSH into the DNS server and verify whether the service is running:
+
+bash
+# Check service status (Linux / systemd)
+sudo systemctl status named
+sudo systemctl status bind9
+
+# If stopped, restart it
+sudo systemctl restart named
+# or
+sudo systemctl restart bind9
+
+# Verify it is now listening on port 53
+sudo ss -ulnp | grep :53
+
+This is the first and most likely fix. A stopped or crashed DNS service is the most common explanation for a consistent port unreachable ICMP error.
+
+---
+
+### Step 2 — Review Firewall Rules
+Check whether a recent firewall change is blocking UDP port 53:
+
+bash
+# List current iptables rules
+sudo iptables -L -n -v
+
+# Check for rules blocking port 53
+sudo iptables -L -n | grep 53
+
+# If a blocking rule was added in error, remove it
+sudo iptables -D INPUT -p udp --dport 53 -j DROP
+```
+
+If using ufw:
+bash
+sudo ufw status
+sudo ufw allow 53/udp
+
+---
+
+### Step 3 — Check Server Resource Usage
+Confirm the server did not crash due to resource exhaustion:
+
+bash
+# CPU and memory
+top
+free -h
+
+# Disk usage — a full disk can cause service crashes
+df -h
+
+# Check system logs for crash indicators
+sudo journalctl -xe | grep named
+sudo tail -100 /var/log/syslog
+
+---
+
+## Longer-Term Prevention
+
+### Step 4 — Deploy a Secondary (Backup) DNS Server
+A single DNS server is a critical single point of failure. If it goes down, the entire domain becomes unreachable.
+
+Recommendation:
+- Configure a secondary DNS server on separate infrastructure
+- Use DNS failover so that if the primary is unreachable, queries are routed to the backup
+- Cloud DNS services (e.g., AWS Route 53, Cloudflare DNS) provide built-in redundancy
+
+---
+ Step 5 — Implement DNS Monitoring & Alerting
+The incident was discovered when users started complaining — not when the service first failed. Proactive monitoring would catch this faster.
+
+Recommended checks:
+- Set up a synthetic monitor that queries 203.0.113.2:53 every 60 seconds
+- Alert on-call if port 53 returns ICMP unreachable or no response within timeout
+- Tools: Nagios, Zabbix, Datadog, UptimeRobot (for external monitoring)
+
+---
