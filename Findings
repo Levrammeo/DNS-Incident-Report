@@ -1,0 +1,47 @@
+# Findings — DNS Incident Analysis
+
+## Protocol Identification
+
+- Protocol involved: UDP (User Datagram Protocol) on Port 53 — standard DNS port
+- Query type: A record lookup for yummyrecipesforme.com
+- Client: Internal host 192.51.100.15
+- DNS Server: External server 203.0.113.2
+
+## What the Logs Showed
+
+### The Request
+The client sent a UDP DNS query to 203.0.113.2 on port 53, requesting the IP address associated with yummyrecipesforme.com. This is the normal first step when loading any website.
+
+### The Response — Error, Not DNS Reply
+Instead of receiving a DNS response containing the website's IP address, the client received an ICMP destination unreachable error with the message udp port 53 unreachable.
+
+This is significant: the error did not come from inside the DNS server's application layer — it came from the network stack, indicating that nothing is listening on port 53 on that server at all.
+
+### Persistence of the Error
+The same ICMP error was returned at three separate timestamps:
+- 13:24 — first failure
+- 13:26 — repeat failure
+- 13:28 — repeat failure
+
+This rules out transient packet loss or a brief service hiccup. The failure is persistent and systematic.
+
+## Impact
+
+- DNS resolution for yummyrecipesforme.com is completely broken
+- No IP address can be returned to clients
+- Website is unreachable for all users, not just some
+- Users see destination port unreachable instead of the page
+
+## Likely Causes (In Order of Priority)
+
+| # | Cause | Likelihood | Why |
+| 1 | DNS service (named/bind9) stopped or crashed | Most likely | ICMP error is consistent with a stopped service, not a network block |
+| 2 | Firewall rule blocking UDP port 53 | Possible | Could explain port unreachable if a recent rule change occurred |
+| 3 | Server fully offline (OS/hardware failure) | Less likely | Server is responding (it returned ICMP), so it is reachable |
+
+## Key Technical Concepts Applied
+
+- UDP — connectionless protocol used for DNS queries; fast but no built-in error recovery
+- DNS — translates domain names to IP addresses; without it, no website is reachable by name
+- ICMP — used by the network to report errors; `port unreachable` means nothing is listening on that port
+- Port 53 — the standard well-known port for DNS; if it is closed, DNS stops working entirely
